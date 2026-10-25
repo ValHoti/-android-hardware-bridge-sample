@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="sq">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OS Hardware Bridge - Paneli i Serverit</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+            padding: 20px; 
+            text-align: center; 
+            background-color: #f5f5f7; 
+            color: #333; 
+        }
+        .container { max-width: 500px; margin: 0 auto; }
+        .card { 
+            background: white; 
+            padding: 20px; 
+            border-radius: 12px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05); 
+            margin-bottom: 20px; 
+            text-align: left; 
+        }
+        h1 { font-size: 24px; margin-bottom: 5px; }
+        button { 
+            background-color: #0071e3; 
+            color: white; 
+            border: none; 
+            padding: 14px; 
+            font-size: 16px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            width: 100%; 
+            font-weight: bold; 
+            margin-top: 10px; 
+        }
+        button:active { background-color: #005bb5; }
+        .output { 
+            margin-top: 12px; 
+            padding: 12px; 
+            background: #e5e5ea; 
+            border-radius: 6px; 
+            font-family: monospace; 
+            min-height: 20px; 
+            word-break: break-all; 
+            font-size: 14px;
+        }
+        .body-transparent { background: transparent !important; background-color: transparent !important; }
+        .element-hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div id="web-interface" class="container">
+        <h1>OS Hardware Bridge</h1>
+        <p>Statusi i Ures: <span id="bridge-status" style="color: red; font-weight: bold;">Duke kontrolluar...</span></p>
+
+        <!-- 1. GPS & GOOGLE MAPS -->
+        <div class="card">
+            <h3>1. GPS Koordinatat & Mape</h3>
+            <button onclick="gjeneroLokacioninMape()">Merr GPS & Gjenero URL</button>
+            <div id="out-gps" class="output">Pret kërkesën...</div>
+        </div>
+
+        <!-- 2. QR & BARCODE -->
+        <div class="card">
+            <h3>2. Kamera si QR / Barcode Reader</h3>
+            <button onclick="skanoQRBarcode()">Hap Skanerin Native</button>
+            <div id="out-qr" class="output">Pret skanimin...</div>
+        </div>
+
+        <!-- 3. NFC TAGS -->
+        <div class="card">
+            <h3>3. NFC Tag Reader</h3>
+            <button onclick="nisLexuesinNFC()">Aktivizo Lexuesin NFC</button>
+            <div id="out-nfc" class="output">Statusi: I fikur</div>
+        </div>
+
+        <!-- 4. BLUETOOTH PRINTER -->
+        <div class="card">
+            <h3>4. Printimi via Bluetooth (80mm)</h3>
+            <button onclick="printoFatureTest()">Skano Printerin & Printo</button>
+            <div id="out-ble" class="output">Pret komandën...</div>
+        </div>
+    </div>
+
+    <!-- Butoni i mbylljes manuale të kamerës -->
+    <button id="btn-anulo-qr" class="element-hidden" style="background-color: #ff3b30; position: fixed; bottom: 20px; left: 5%; width: 90%; z-index: 9999; color:white; padding:15px; border:none; font-weight:bold; border-radius:8px;" onclick="ndaloSkanimin()">Anulo Skanimin</button>
+
+    <script>
+        // Mënyra standarde dhe më e sigurt për të thirrur objektet e plugin-eve në Capacitor
+        function merrPlugin(emri) {
+            if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins[emri]) {
+                return window.Capacitor.Plugins[emri];
+            }
+            return null;
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const statusIndicator = document.getElementById('bridge-status');
+            if (window.Capacitor && window.Capacitor.Plugins) {
+                statusIndicator.innerText = "AKTIV (Brenda APK)";
+                statusIndicator.style.color = "green";
+            } else {
+                statusIndicator.innerText = "JO AKTIV (Browser i thjeshtë)";
+            }
+        });
+
+        // ================= 1. GPS MAPS URL (@LAT,LNG) =================
+        async function gjeneroLokacioninMape() {
+            const out = document.getElementById('out-gps');
+            const Geo = merrPlugin('Geolocation');
+            if (!Geo) { out.innerText = "Gabim: Moduli i GPS nuk u gjet."; return; }
+
+            try {
+                out.innerText = "Duke kërkuar satelitët...";
+                const position = await Geo.getCurrentPosition();
+                const lat = position.coords.latitude;
+                const lng = position.coords.longitude;
+                
+                // Gjenerimi i URL-së në formatin e kërkuar me "@"
+                const googleMapsUrl = `https://www.google.com/maps/@${lat},${lng},17z`;
+                
+                out.innerHTML = `
+                    <b>Lat:</b> ${lat} <br> <b>Lng:</b> ${lng} <br><br>
+                    <b>URL e saktë e Google Maps:</b><br>
+                    <a href="${googleMapsUrl}" target="_blank">${googleMapsUrl}</a>
+                `;
+            } catch (e) { out.innerText = "Gabim GPS: " + e.message; }
+        }
+
+        // ================= 2. QR & BARCODE READER =================
+        async function skanoQRBarcode() {
+            const out = document.getElementById('out-qr');
+            const Scanner = merrPlugin('BarcodeScanner');
+            if (!Scanner) { out.innerText = "Gabim: Moduli i Skanerit nuk u gjet."; return; }
+
+            try {
+                const permissions = await Scanner.requestPermissions();
+                if (permissions.camera !== 'granted') { out.innerText = "Leja për kamerën u refuzua."; return; }
+
+                document.getElementById('web-interface').classList.add('element-hidden');
+                document.body.classList.add('body-transparent');
+                document.getElementById('btn-anulo-qr').classList.remove('element-hidden');
+
+                const result = await Scanner.scan();
+                ndaloSkanimin();
+
+                if (result && result.barcodes && result.barcodes.length > 0) {
+                    out.innerText = "Kodi: " + result.barcodes[0].displayValue;
+                } else if (result && result.barcodes && result.barcodes.displayValue) {
+                    out.innerText = "Kodi: " + result.barcodes.displayValue;
+                } else {
+                    out.innerText = "Skanimi përfundoi pa të dhëna.";
+                }
+            } catch (e) { ndaloSkanimin(); out.innerText = "Gabim Skaneri: " + e.message; }
+        }
+
+        function ndaloSkanimin() {
+            document.getElementById('web-interface').classList.remove('element-hidden');
+            document.body.classList.remove('body-transparent');
+            document.getElementById('btn-anulo-qr').classList.add('element-hidden');
+        }
+
+
+// ================= 3. NFC TAG READER (EMRI I SAKTË: Nfc) =================
+async function nisLexuesinNFC() {
+    const out = document.getElementById('out-nfc');
+    const Nfc = merrPlugin('NFCUtils');
+
+    if (!Nfc) {
+        out.innerText = 'Gabim: NFCUtils nuk u gjet në APK.';
+        return;
+    }
+
+    try {
+        const { supported } = await Nfc.isSupported();
+
+        if (!supported) {
+            out.innerText = 'Ky telefon nuk e mbështet NFC-në.';
+            return;
+        }
+
+        await Nfc.removeAllListeners();
+
+        await Nfc.addListener('nfcScanned', event => {
+            const id = event?.tagInfo?.id;
+            out.innerText = id
+                ? 'U lexua NFC Tag ID: ' + id
+                : 'U lexua tag-u, por nuk u kthye ID.';
+        });
+
+        await Nfc.addListener('scanError', error => {
+            out.innerText = 'Gabim NFC: ' + (error.message || 'leximi dështoi');
+        });
+
+        await Nfc.startReading();
+        out.innerText = 'Afroje kartelën ose tag-un te telefoni...';
+    } catch (e) {
+        out.innerText = 'Gabim gjatë nisjes së NFC: ' + e.message;
+    }
+}
+
+
+        // ================= 4. BLUETOOTH PRINTER (Emri zyrtar: BluetoothLe) =================
+        async function printoFatureTest() {
+            const out = document.getElementById('out-ble');
+            const Ble = merrPlugin('BluetoothLe');
+            if (!Ble) { out.innerText = "Gabim: Moduli i BluetoothLe nuk u gjet."; return; }
+
+            try {
+                await Ble.initialize();
+                out.innerText = "Duke kërkuar printera...";
+
+                const device = await Ble.requestDevice({ allowDuplicates: false });
+                out.innerText = `Duke u lidhur me: ${device.name}...`;
+                
+                await Ble.connect({ deviceId: device.deviceId });
+                out.innerText = "I lidhur! Duke dërguar faturën ESC/POS...";
+
+                const ESC = '\x1B'; const LF = '\x0A';
+                const TEXT_MADH = ESC + '\x21' + '\x30'; const TEXT_NORM = ESC + '\x21' + '\x00'; 
+
+                let fatura = TEXT_MADH + "      BIT SH.P.K." + LF + TEXT_NORM + "--------------------------------" + LF + "Artikulli          Sasia   Cmimi" + LF + "Koka-Kola 0.33L      1     1.50 EUR" + LF + "--------------------------------" + LF + "TOTALI:                    1.50 EUR" + LF + LF + LF + LF;
+
+                const encoder = new TextEncoder();
+                const bytes = encoder.encode(fatura);
+                const varguNumrave = Array.from(bytes); // Kthehet në formatin që kërkon korniza native
+
+                const serviceUuid = "0000ffe0-0000-1000-8000-00805f9b34fb";
+                const characteristicUuid = "0000ffe1-0000-1000-8000-00805f9b34fb";
+
+                await Ble.write({
+                    deviceId: device.deviceId,
+                    service: serviceUuid,
+				characteristic: characteristicUuid,
+				value: varguNumrave
+				});
+
+			out.innerText = "Printimi u krye me sukses!";
+
+			await Ble.disconnect({ deviceId: device.deviceId });
+			} 
+			catch (error) 
+			{ 
+				out.innerText = "Gabim Bluetooth: " + error.message; 
+			}
+		}
+   </script>
+  </body>
+</html>
